@@ -1,10 +1,9 @@
+import CameraCard from "@/components/CameraCard";
+
 export default function Home() {
-  const cameras = [
-    {
-      name: "STAIRS 1",
-      path: "stairs1",
-    },
-  ];
+  
+  const cameras = [{name: "STAIRS 1", path: "stairs1"}, 
+    {name: "CORRIDOR 2", path: "corridor2"}];
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
@@ -25,25 +24,10 @@ export default function Home() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {cameras.map((camera) => (
-              <div
+              <CameraCard
                 key={camera.path}
-                className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900"
-              >
-                <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
-                  <div>
-                    <h3 className="font-medium">{camera.name}</h3>
-                    <p className="text-xs text-zinc-500">{camera.path}</p>
-                  </div>
-
-                  <span className="text-xs text-zinc-500">OFFLINE</span>
-                </div>
-
-                <div className="flex aspect-video items-center justify-center bg-black">
-                  <span className="text-sm text-zinc-600">
-                    Camera feed
-                  </span>
-                </div>
-              </div>
+                camera={camera}
+              />
             ))}
           </div>
         )}
