@@ -1,0 +1,12 @@
+[Unit]
+Description=Personal NVR recording discovery (one shot)
+After=nvr-nextjs.service
+Wants=nvr-nextjs.service
+
+[Service]
+Type=oneshot
+User=nvr
+Group=nvr
+WorkingDirectory=/opt/personal_NVR/security-nvr
+EnvironmentFile=/opt/personal_NVR/security-nvr/.env.local
+ExecStart=/usr/bin/curl -sf -X POST -H "x-sync-secret: ${SYNC_SECRET}" http://127.0.0.1:3000/api/sync

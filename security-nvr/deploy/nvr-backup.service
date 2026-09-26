@@ -1,0 +1,10 @@
+[Unit]
+Description=Personal NVR database backup (one shot)
+
+[Service]
+Type=oneshot
+User=nvr
+Group=nvr
+WorkingDirectory=/opt/personal_NVR/security-nvr
+EnvironmentFile=/opt/personal_NVR/security-nvr/.env.local
+ExecStart=/opt/personal_NVR/security-nvr/scripts/backup-db.sh

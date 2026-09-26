@@ -1,0 +1,19 @@
+[Unit]
+Description=Personal NVR (Next.js)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=nvr
+Group=nvr
+WorkingDirectory=/opt/personal_NVR/security-nvr
+EnvironmentFile=/opt/personal_NVR/security-nvr/.env.local
+ExecStart=/usr/bin/npm run start:lan
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

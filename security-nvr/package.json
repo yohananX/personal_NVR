@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:lan": "next start -H 0.0.0.0 -p 3000",
     "lint": "eslint",
     "sync:seed": "node scripts/seed-fake-segments.mjs",
     "user:create": "node scripts/create-user.mjs",

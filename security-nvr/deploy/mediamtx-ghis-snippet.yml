@@ -1,0 +1,28 @@
+# MediaMTX settings required by the NVR. MERGE these keys into the existing
+# /usr/local/etc/mediamtx.yml on ghis - do not replace the whole file.
+# After editing:  sudo systemctl restart mediamtx
+# Replace YOUR_SYNC_SECRET with the same value as SYNC_SECRET in .env.local.
+
+# Playback server (Stage 4: recording playback in <video>)
+playback: yes
+playbackAddress: :9996
+playbackAllowOrigins: ["http://192.168.0.146:3000"]
+
+# Browsers call WHEP from the Next.js origin (Stage 3: live view)
+webrtcAllowOrigins: ["http://192.168.0.146:3000"]
+
+pathDefaults:
+  record: yes
+  recordPath: /srv/mediamtx/recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordSegmentDuration: 1h
+  recordDeleteAfter: 24h
+  # Instant discovery ping after each finished segment (Stage 5).
+  # The 5-minute systemd timer remains the reliable fallback.
+  runOnRecordSegmentComplete: curl -sf -X POST -H "x-sync-secret: YOUR_SYNC_SECRET" http://127.0.0.1:3000/api/sync
+
+paths:
+  stairs1:
+    source: rtsp://192.168.0.173/live/ch00_0
+  corridor2:
+    source: rtsp://192.168.0.142/live/ch00_0
