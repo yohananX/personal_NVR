@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import LogoutButton from "@/components/LogoutButton";
 
 type Camera = {
   id: number;
@@ -19,10 +20,16 @@ export default function CamerasPage() {
 
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
 
   async function loadCameras() {
     try {
       const response = await fetch("/api/cameras");
+
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Failed to load cameras.");
@@ -37,6 +44,12 @@ export default function CamerasPage() {
 
   useEffect(() => {
     loadCameras();
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => {
+        if (me?.role) setRole(me.role);
+      })
+      .catch(() => {});
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -64,6 +77,11 @@ export default function CamerasPage() {
       });
 
       const data = await response.json();
+
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
 
       if (!response.ok) {
         setError(data.error || "Failed to save camera.");
@@ -114,6 +132,11 @@ export default function CamerasPage() {
 
       const data = await response.json();
 
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+
       if (!response.ok) {
         setError(data.error || "Failed to delete camera.");
         return;
@@ -131,15 +154,20 @@ export default function CamerasPage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
-      <header className="border-b border-zinc-800 px-6 py-4">
-        <h1 className="text-xl font-semibold">CAMERA MANAGEMENT</h1>
+      <header className="flex items-center justify-between border-b border-zinc-800 px-6 py-4">
+        <div>
+          <h1 className="text-xl font-semibold">CAMERA MANAGEMENT</h1>
 
-        <p className="text-sm text-zinc-400">
-          Add and manage CCTV cameras
-        </p>
+          <p className="text-sm text-zinc-400">
+            Add and manage CCTV cameras
+          </p>
+        </div>
+
+        <LogoutButton />
       </header>
 
       <section className="grid gap-6 p-6 lg:grid-cols-2">
+        {role !== "OPERATOR" && (
         <div className="max-w-xl rounded-lg border border-zinc-800 bg-zinc-900 p-6">
           <h2 className="mb-6 text-lg font-medium">
             {editingId ? "Edit Camera" : "Add Camera"}
@@ -205,6 +233,7 @@ export default function CamerasPage() {
             </div>
           </form>
         </div>
+        )}
 
         <div>
           <h2 className="mb-4 text-lg font-medium">
@@ -235,6 +264,7 @@ export default function CamerasPage() {
                       </p>
                     </div>
 
+                    {role !== "OPERATOR" && (
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -252,6 +282,7 @@ export default function CamerasPage() {
                         Delete
                       </button>
                     </div>
+                    )}
                   </div>
                 </div>
               ))}

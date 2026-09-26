@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 import LivePlayer from "@/components/LivePlayer";
+import { requireUser } from "@/lib/auth";
 
 type Camera = {
   id: number;
@@ -24,10 +26,12 @@ type CameraPageProps = {
 };
 
 async function getCamera(id: string): Promise<Camera> {
+  const cookie = (await cookies()).toString();
   const response = await fetch(
     `http://localhost:3000/api/cameras/${id}`,
     {
       cache: "no-store",
+      headers: { Cookie: cookie },
     }
   );
 
@@ -39,10 +43,12 @@ async function getCamera(id: string): Promise<Camera> {
 }
 
 async function getRecordings(id: string): Promise<Recording[]> {
+  const cookie = (await cookies()).toString();
   const response = await fetch(
     `http://localhost:3000/api/recordings?cameraId=${id}`,
     {
       cache: "no-store",
+      headers: { Cookie: cookie },
     }
   );
 
@@ -71,6 +77,7 @@ function getDuration(startedAt: string, endedAt: string) {
 export default async function CameraPage({
   params,
 }: CameraPageProps) {
+  await requireUser();
   const { id } = await params;
 
   const [camera, recordings] = await Promise.all([

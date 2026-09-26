@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 import RecordingPlayer from "@/components/RecordingPlayer";
+import { requireUser } from "@/lib/auth";
 
 type Recording = {
   id: number;
@@ -19,10 +21,12 @@ type RecordingPageProps = {
 };
 
 async function getRecording(id: string): Promise<Recording> {
+  const cookie = (await cookies()).toString();
   const response = await fetch(
     `http://localhost:3000/api/recordings/${id}`,
     {
       cache: "no-store",
+      headers: { Cookie: cookie },
     }
   );
 
@@ -51,6 +55,7 @@ function getDuration(startedAt: string, endedAt: string) {
 export default async function RecordingPage({
   params,
 }: RecordingPageProps) {
+  await requireUser();
   const { id } = await params;
 
   const recording = await getRecording(id);

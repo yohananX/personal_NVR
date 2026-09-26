@@ -1,9 +1,16 @@
+import { cookies } from "next/headers";
 import CameraCard from "@/components/CameraCard";
+import Clock from "@/components/Clock";
+import LogoutButton from "@/components/LogoutButton";
 import type { Camera } from "@/types/camera";
+import type { PathLiveness } from "@/lib/mediamtx-api";
+import { requireUser } from "@/lib/auth";
 
 async function getCameras(): Promise<Camera[]> {
+  const cookie = (await cookies()).toString();
   const response = await fetch("http://localhost:3000/api/cameras", {
     cache: "no-store",
+    headers: { Cookie: cookie },
   });
 
   if (!response.ok) {
@@ -14,7 +21,26 @@ async function getCameras(): Promise<Camera[]> {
 }
 
 export default async function Home() {
-  const cameras = await getCameras();
+  const user = await requireUser();
+  const cookie = (await cookies()).toString();
+  const [cameras, liveness] = await Promise.all([
+    getCameras(),
+    fetch("http://localhost:3000/api/mediamtx/status", {
+      cache: "no-store",
+      headers: { Cookie: cookie },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null) as Promise<PathLiveness | null>,
+  ]);
+
+  const liveCount = liveness?.reachable
+    ? cameras.filter((c) => liveness.online[c.path]).length
+    : 0;
+  const mediaLabel = !liveness?.configured
+    ? "MediaMTX unconfigured"
+    : liveness.reachable
+      ? `MediaMTX · ${liveCount}/${cameras.length} live`
+      : "MediaMTX unreachable";
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
@@ -31,11 +57,13 @@ export default async function Home() {
           </div>
 
           <div className="text-right">
-            <p className="text-xs text-zinc-500">
-              SYSTEM STATUS
+            <Clock />
+
+            <p className="mt-1 text-xs text-zinc-500">
+              {mediaLabel}
             </p>
 
-            <div className="flex items-center justify-end gap-2">
+            <div className="mt-1 flex items-center justify-end gap-2">
               <span className="h-2 w-2 rounded-full bg-zinc-500" />
 
               <span className="text-sm text-zinc-400">
@@ -54,16 +82,20 @@ export default async function Home() {
             </h2>
 
             <p className="text-sm text-zinc-500">
-              {cameras.length} configured
+              {cameras.length} configured · {user.username} (
+              {user.role})
             </p>
           </div>
 
-          <a
-            href="/cameras"
-            className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900"
-          >
-            Manage Cameras
-          </a>
+          <div className="flex gap-2">
+            <a
+              href="/cameras"
+              className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900"
+            >
+              Manage Cameras
+            </a>
+            <LogoutButton />
+          </div>
         </div>
 
         {cameras.length === 0 ? (
@@ -85,6 +117,11 @@ export default async function Home() {
               <CameraCard
                 key={camera.path}
                 camera={camera}
+                live={
+                  liveness?.configured
+                    ? (liveness.online[camera.path] ?? false)
+                    : null
+                }
               />
             ))}
           </div>

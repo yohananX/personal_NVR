@@ -1,4 +1,8 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
+import LogoutButton from "@/components/LogoutButton";
+import SyncButton from "@/components/SyncButton";
+import { requireUser } from "@/lib/auth";
 
 type Camera = {
   id: number;
@@ -22,8 +26,10 @@ type RecordingsPageProps = {
 };
 
 async function getCameras(): Promise<Camera[]> {
+  const cookie = (await cookies()).toString();
   const response = await fetch("http://localhost:3000/api/cameras", {
     cache: "no-store",
+    headers: { Cookie: cookie },
   });
 
   if (!response.ok) {
@@ -40,6 +46,7 @@ async function getRecordings(cameraId?: string): Promise<Recording[]> {
 
   const response = await fetch(url, {
     cache: "no-store",
+    headers: { Cookie: (await cookies()).toString() },
   });
 
   if (!response.ok) {
@@ -66,6 +73,7 @@ function getDuration(startedAt: string, endedAt: string) {
 export default async function RecordingsPage({
   searchParams,
 }: RecordingsPageProps) {
+  const user = await requireUser();
   const { cameraId } = await searchParams;
 
   const [cameras, recordings] = await Promise.all([
@@ -84,6 +92,11 @@ export default async function RecordingsPage({
         </Link>
 
         <h1 className="mt-2 text-xl font-semibold">Recordings</h1>
+
+        <div className="mt-3 flex items-center justify-between gap-2">
+          {user.role === "ADMIN" ? <SyncButton /> : <span />}
+          <LogoutButton />
+        </div>
       </header>
 
       <section className="p-6">

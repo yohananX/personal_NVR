@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync:seed": "node scripts/seed-fake-segments.mjs",
+    "user:create": "node scripts/create-user.mjs",
+    "migrate": "node scripts/apply-migration.mjs"
   },
   "dependencies": {
     "next": "16.3.6",
