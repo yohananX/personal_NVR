@@ -1,4 +1,6 @@
 import type { Camera } from "@/types/camera";
+import Link from "next/link";
+import LivePlayer from "@/components/LivePlayer";
 
 type CameraCardProps = {
   camera: Camera;
@@ -7,22 +9,38 @@ type CameraCardProps = {
 export default function CameraCard({ camera }: CameraCardProps) {
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-2 py-1">
+      {/* Camera header */}
+      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <div>
-          <h3 className="text-sm">{camera.name}</h3>
-          <p className="text-xs text-zinc-500">{camera.path}</p>
+          <h3 className="text-sm font-medium">
+            {camera.name}
+          </h3>
+
+          <p className="text-xs text-zinc-500">
+            {camera.path}
+          </p>
         </div>
 
-        <span className="text-xs text-zinc-500">LIVE</span>
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-zinc-500" />
+          <span className="text-xs text-zinc-500">
+            OFFLINE
+          </span>
+        </div>
       </div>
 
-      <div className="aspect-video bg-black">
-        <iframe
-          src={`http://192.168.0.146:8889/${camera.path}`}
-          title={`${camera.name} live feed`}
-          className="h-full w-full border-0"
-          allow="autoplay; fullscreen"
-        />
+      {/* Video area - click-to-play to keep dashboard CPU low */}
+      <LivePlayer path={camera.path} autoPlay={false} />
+
+      {/* Footer */}
+      <div className="flex items-center justify-between border-t border-zinc-800 px-4 py-2">
+        <span className="text-xs text-zinc-500">
+          {camera.path}
+        </span>
+
+        <Link href={`/cameras/${camera.id}`} className="text-xs text-zinc-400 hover:text-white">
+          View
+        </Link>
       </div>
     </div>
   );

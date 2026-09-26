@@ -1,41 +1,46 @@
 import { NextResponse } from "next/server";
-
-const cameras = [
-  {
-    id: 1,
-    name: "STAIRS 1",
-    path: "stairs1",
-  },
-  {
-    id: 2,
-    name: "CORRIDOR 2",
-    path: "corridor2",
-  },
-];
+import pool from "@/lib/db";
 
 export async function GET() {
-  return NextResponse.json(cameras);
+  const result = await pool.query(
+    "SELECT id, name, path, created_at FROM cameras ORDER BY id ASC"
+  );
+
+  return NextResponse.json(result.rows);
 }
 
 export async function POST(request: Request) {
   const body = await request.json();
 
   if (
-    typeof body.name !== "string" || typeof body.path !== "string" || body.name.trim() === "" || body.path.trim() === ""){
-      return NextResponse.json(
-        {error: "Name and path are required"},
-        {status: 400}
-      )
-    }
+    typeof body.name !== "string" ||
+    typeof body.path !== "string" ||
+    body.name.trim() === "" ||
+    body.path.trim() === ""
+  ) {
+    return NextResponse.json(
+      { error: "Name and path are required." },
+      { status: 400 }
+    );
+  }
 
+  try {
+    const result = await pool.query(
+      `
+        INSERT INTO cameras (name, path)
+        VALUES ($1, $2)
+        RETURNING id, name, path, created_at
+      `,
+      [body.name.trim(), body.path.trim()]
+    );
 
-  const camera = {
-    id: cameras.length + 1,
-    name: body.name,
-    path: body.path,
-  };
+    return NextResponse.json(result.rows[0], { status: 201 });
+  } catch (error: unknown) {
+    console.error("Failed to create camera:", error);
 
-  cameras.push(camera);
-
-  return NextResponse.json(camera, { status: 201 });
+    return NextResponse.json(
+      { error: "Failed to create camera." },
+      { status: 500 }
+    );
+  }
 }
