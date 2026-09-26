@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Secrets - never commit
+.env*.local
+*.pem
+*.key
+
+# Local dev fixtures
+recordings.dev/
+
+# Logs
+*.log
+npm-debug.log*
