@@ -9,7 +9,7 @@ export default function CameraCard({ camera }: CameraCardProps) {
     <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900">
       <div className="flex items-center justify-between border-b border-zinc-800 px-2 py-1">
         <div>
-          <h3 className="font-small">{camera.name}</h3>
+          <h3 className="text-sm">{camera.name}</h3>
           <p className="text-xs text-zinc-500">{camera.path}</p>
         </div>
 

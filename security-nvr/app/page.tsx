@@ -1,9 +1,20 @@
 import CameraCard from "@/components/CameraCard";
+import type { Camera } from "@/types/camera";
 
-export default function Home() {
-  
-  const cameras = [{name: "STAIRS 1", path: "stairs1"}, 
-    {name: "CORRIDOR 2", path: "corridor2"}];
+async function getCameras(): Promise<Camera[]> {
+  const response = await fetch("http://localhost:3000/api/cameras", {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch cameras");
+  }
+
+  return response.json();
+}
+
+export default async function Home() {
+  const cameras = await getCameras();
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
