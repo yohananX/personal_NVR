@@ -1,339 +1,189 @@
-# Security NVR
+# Personal NVR
 
-A lightweight, self-hosted Network Video Recorder (NVR) and local CCTV monitoring system built for a private home/lab environment.
+A lightweight, self-hosted Network Video Recorder (NVR) and local CCTV
+monitoring system for a private home/lab environment.
 
-The system provides a web interface for monitoring multiple IP cameras, managing camera configurations, viewing live streams, and eventually browsing and controlling recorded footage.
+The system provides a web interface for monitoring IP cameras, managing
+camera configurations, viewing live streams, and browsing/deleting recorded
+footage. It runs on a low-resource Ubuntu homelab server on the LAN
+(`http://192.168.0.146:3000`) alongside MediaMTX and PostgreSQL. No Docker.
 
 The application is designed around a separation of responsibilities:
 
-* **Next.js** handles the web application, UI, application logic, and API.
-* **MediaMTX** handles RTSP ingestion, live streaming, and recording.
-* **PostgreSQL** will store persistent application metadata.
-* **IP cameras** provide the source video streams.
+* **Next.js** owns the application: dashboard, camera management, recording
+  management, authentication, API, UI.
+* **MediaMTX** owns video: RTSP ingestion, WebRTC live streaming, continuous
+  recording, playback, control API.
+* **PostgreSQL** owns persistent metadata: cameras, recordings, users,
+  sessions.
+* **IP cameras** provide the source RTSP streams.
 
 ---
 
 ## Architecture
 
 ```text
-                    ┌─────────────────┐
-                    │   IP Cameras    │
-                    │                 │
-                    │ RTSP Streams    │
-                    └────────┬────────┘
-                             │
-                             │ RTSP
-                             ▼
-                    ┌─────────────────┐
-                    │    MediaMTX     │
-                    │                 │
-                    │ RTSP ingestion  │
-                    │ WebRTC          │
-                    │ Recording       │
-                    │ Playback        │
-                    └────────┬────────┘
-                             │
-                    Live / Media Access
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │    Next.js      │
-                    │   NVR Web App   │
-                    │                 │
-                    │ Dashboard       │
-                    │ Camera Mgmt     │
-                    │ Recordings      │
-                    │ Playback        │
-                    │ Authentication  │
-                    │ API             │
-                    └────────┬────────┘
-                             │
-                             │ Metadata
-                             ▼
-                    ┌─────────────────┐
-                    │   PostgreSQL    │
-                    │                 │
-                    │ Cameras         │
-                    │ Users           │
-                    │ Recordings      │
-                    │ Configuration   │
-                    └─────────────────┘
+IP Cameras
+    ↓ RTSP
+MediaMTX
+    ├── WebRTC live (WHEP, :8889)
+    ├── Recording (continuous, 1h fmp4 segments, ~24h retention)
+    ├── Playback (:9996/get)
+    └── Control API (:9997, path liveness)
+        ↓
+Next.js NVR
+    ├── Dashboard (auto-connecting live grid)
+    ├── Camera management (ADMIN)
+    ├── Recording management (browse / play / delete)
+    ├── Authentication (ADMIN / OPERATOR)
+    └── API
+        ↓
+PostgreSQL
+    ├── cameras
+    ├── recordings
+    ├── users
+    └── sessions
 ```
 
-### Design Principle
+### Design principles
 
-The Next.js application does **not** process or proxy RTSP video.
-
-MediaMTX is responsible for media infrastructure, while Next.js is responsible for the NVR application itself.
-
-This keeps the web application lightweight and allows the media server to perform the work it is designed for.
-
----
-
-# Current Status
-
-The project is under active development.
-
-### Currently implemented
-
-* Next.js application
-* TypeScript
-* Initial NVR dashboard
-* Dark CCTV-style interface
-* Reusable `CameraCard` component
-* Multiple camera display
-* MediaMTX WebRTC stream embedding
-* Camera management page
-* Camera creation API
-* Temporary in-memory camera storage
-* Shared `Camera` TypeScript type
-* Git/GitHub version control
-
-### Planned
-
-* PostgreSQL database
-* Persistent camera management
-* Camera deletion
-* Camera editing
-* Camera status monitoring
-* Recording controls
-* Recording browser
-* Recording playback
-* Date/time filtering
-* Authentication
-* User roles
-* Security-person/operator accounts
-* Dashboard navigation
-* Camera health monitoring
-* Deployment to the home server
-* Support for a larger camera installation
+* The Next.js application does **not** process or proxy RTSP video, and the
+  browser never connects directly to the cameras.
+* Recording is **continuous in MediaMTX** (`record: yes` in
+  `deploy/mediamtx-ghis-snippet.yml`). The NVR discovers segment files via
+  `POST /api/sync` (systemd timer every 5 minutes + MediaMTX
+  `runOnRecordSegmentComplete` webhook) and plays them through the MediaMTX
+  playback server. There is deliberately no fake browser-side "Record" button.
+* Deleting a recording removes **both** the segment file and its PostgreSQL
+  row, keeping the two systems consistent.
 
 ---
 
-# Technology Stack
+## Current capabilities
 
-## Frontend / Application
+* Next.js 16 + React 19 + TypeScript + Tailwind CSS application
+* PostgreSQL persistence for cameras, recordings, users, sessions
+* Camera management: add / edit / delete (ADMIN only), persistent storage
+* Authentication: scrypt password hashing, stateful sessions, httpOnly
+  `nvr_session` cookie, 7-day sliding expiry, instant revoke
+* Roles: `ADMIN` (cameras, users, sync, recording deletion) and `OPERATOR`
+  (live feeds, recordings, playback)
+* MediaMTX integration: WHEP/WebRTC live feeds (`LivePlayer`, muted autoplay),
+  server-side path liveness for the dashboard (`GET /api/mediamtx/status`)
+* Recording discovery/synchronization (`POST /api/sync`, machine secret or
+  ADMIN session), pruning of expired segments
+* Recording browser with camera/date/time filters and pagination
+  (`GET /api/recordings` envelope `{ items, total, page, limit }`)
+* Recording playback via MediaMTX (`GET /api/recordings/:id` +
+  `RecordingPlayer`)
+* Recording deletion (ADMIN): file + metadata (`DELETE /api/recordings/:id`)
+* Public health endpoint (`GET /api/health`: db + MediaMTX reachability)
+* Database backups (daily `nvr-backup.timer`, 7-day retention)
+* systemd deployment: `nvr-nextjs.service`, `nvr-sync.service` +
+  `nvr-sync.timer`, `nvr-backup.service` + `nvr-backup.timer`,
+  `mediamtx.service`
+* LAN operation over plain HTTP (`AUTH_COOKIE_SECURE=false`); set
+  `AUTH_COOKIE_SECURE=true` when HTTPS is introduced
 
-* [Next.js](https://nextjs.org/)
-* [React](https://react.dev/)
-* TypeScript
-* Tailwind CSS
+---
 
-## Media Infrastructure
+## Project structure
 
-* [MediaMTX](https://github.com/bluenviron/mediamtx)
-* RTSP
-* WebRTC
+```text
+personal_NVR/
+├── README.md                  ← this file
+└── security-nvr/              ← application root (run npm commands here)
+    ├── app/
+    │   ├── page.tsx           ← dashboard (live grid)
+    │   ├── cameras/
+    │   │   ├── page.tsx       ← camera management
+    │   │   └── [id]/page.tsx  ← camera detail (live + recordings)
+    │   ├── recordings/
+    │   │   ├── page.tsx       ← recording browser
+    │   │   └── [id]/page.tsx  ← recording playback
+    │   ├── login/page.tsx
+    │   └── api/
+    │       ├── cameras/route.ts          ← GET list, POST create (ADMIN)
+    │       ├── cameras/[id]/route.ts     ← GET, PUT, DELETE (ADMIN writes)
+    │       ├── recordings/route.ts       ← GET filtered + paginated
+    │       ├── recordings/[id]/route.ts  ← GET playback meta, DELETE (ADMIN)
+    │       ├── sync/route.ts             ← POST discovery, GET status
+    │       ├── health/route.ts           ← public health
+    │       ├── mediamtx/status/route.ts  ← path liveness
+    │       └── auth/login|logout|me/route.ts
+    ├── components/
+    │   ├── LivePlayer.tsx           ← auto-connecting WHEP player
+    │   ├── CameraCard.tsx           ← dashboard card (status + REC + Open)
+    │   ├── RecordingPlayer.tsx      ← MediaMTX playback <video>
+    │   ├── RecordingDeleteButton.tsx← confirmed real deletion (ADMIN)
+    │   ├── SyncButton.tsx           ← ADMIN "Sync now"
+    │   ├── LogoutButton.tsx
+    │   └── Clock.tsx
+    ├── lib/
+    │   ├── auth.ts            ← scrypt + sessions + cookie
+    │   ├── db.ts              ← pg pool (DATABASE_URL)
+    │   ├── mediamtx.ts        ← WHEP/playback URL strategy
+    │   ├── mediamtx-api.ts    ← control-API liveness client
+    │   └── recordings-sync.ts ← filesystem discovery
+    ├── types/camera.ts
+    ├── db/migrations/
+    │   ├── 001_recordings.sql     ← baseline: cameras + recordings
+    │   ├── 002_recordings_sync.sql← sync uniqueness + lookup index
+    │   └── 003_auth.sql           ← users + sessions
+    ├── scripts/
+    │   ├── apply-migration.mjs  ← npm run migrate -- <file>
+    │   ├── create-user.mjs      ← npm run user:create
+    │   ├── seed-fake-segments.mjs
+    │   └── backup-db.sh
+    ├── deploy/
+    │   ├── nvr-nextjs.service, nvr-sync.service/.timer,
+    │   │   nvr-backup.service/.timer
+    │   ├── db-init.sql          ← role + database bootstrap (once)
+    │   └── mediamtx-ghis-snippet.yml
+    ├── docs/deploy-ghis.md    ← full server deployment guide
+    ├── middleware.ts          ← redirect anonymous page visits to /login
+    └── .env.example           ← all required variables (no secrets)
+```
 
-## Database
+---
 
-* PostgreSQL
+## Setup
 
-## Development
+### Requirements
 
+* Node.js 22 LTS + npm
+* PostgreSQL (local dev or the homelab server)
 * Git
-* GitHub
-* Visual Studio Code
-* Windows development machine
-* Ubuntu Server for the homelab deployment
+* MediaMTX + cameras only for real streams (dev PC works without them and
+  shows placeholders)
 
----
+### Install dependencies
 
-# Project Structure
-
-The application currently follows this structure:
-
-```text
-security-nvr/
-│
-├── app/
-│   ├── api/
-│   │   └── cameras/
-│   │       └── route.ts
-│   │
-│   ├── cameras/
-│   │   └── page.tsx
-│   │
-│   ├── page.tsx
-│   ├── layout.tsx
-│   └── globals.css
-│
-├── components/
-│   └── CameraCard.tsx
-│
-├── types/
-│   └── camera.ts
-│
-├── public/
-│
-├── package.json
-├── tsconfig.json
-├── next.config.ts
-└── README.md
-```
-
-The structure will evolve as features are added.
-
----
-
-# Camera Model
-
-A camera currently has the following application-level structure:
-
-```ts
-export type Camera = {
-  name: string;
-  path: string;
-};
-```
-
-For example:
-
-```json
-{
-  "name": "STAIRS 1",
-  "path": "stairs1"
-}
-```
-
-The `path` represents the MediaMTX stream path.
-
-The application constructs the actual media URL from the configured MediaMTX server rather than storing the complete infrastructure URL with every camera.
-
-When PostgreSQL is introduced, the persistent model is expected to become:
-
-```text
-Camera
-├── id
-├── name
-└── stream_path
-```
-
-The database will generate the numeric `id`.
-
----
-
-# API
-
-The application is beginning to expose its own API through Next.js route handlers.
-
-## Cameras
-
-### Get cameras
-
-```http
-GET /api/cameras
-```
-
-Returns the configured cameras.
-
-### Add camera
-
-```http
-POST /api/cameras
-Content-Type: application/json
-```
-
-Example request:
-
-```json
-{
-  "name": "LOBBY 1",
-  "path": "lobby1"
-}
-```
-
-The current implementation stores cameras temporarily in application memory.
-
-This will be replaced by PostgreSQL persistence.
-
----
-
-# MediaMTX
-
-MediaMTX operates separately from the Next.js application.
-
-Its responsibilities include:
-
-* Receiving RTSP streams from cameras
-* Providing live WebRTC streams
-* Recording camera streams
-* Managing recorded media
-* Providing playback functionality
-
-Example MediaMTX stream path:
-
-```text
-stairs1
-```
-
-The corresponding local WebRTC endpoint is:
-
-```text
-http://<MEDIAMTX_SERVER>:8889/stairs1
-```
-
-The Next.js application embeds the stream rather than directly handling RTSP.
-
----
-
-# Development
-
-## Requirements
-
-Before running the application, install:
-
-* Node.js
-* npm
-* Git
-
-MediaMTX is only required when testing actual camera streams.
-
-PostgreSQL will be required once database persistence is enabled.
-
----
-
-## Install dependencies
-
-From the project directory:
+From the application root:
 
 ```bash
-npm install
+cd security-nvr
+npm ci
 ```
 
----
-
-## Start development server
+### Development
 
 ```bash
 npm run dev
 ```
 
-The application will normally be available at:
+Available at `http://localhost:3000`. Without `NEXT_PUBLIC_MEDIAMTX_BASE`,
+live/playback areas render placeholders instead of failing.
 
-```text
-http://localhost:3000
-```
-
----
-
-## Build for production
+### Production
 
 ```bash
 npm run build
-```
-
----
-
-## Start production server
-
-```bash
 npm start
+# LAN: npm run start:lan  (next start -H 0.0.0.0 -p 3000)
 ```
 
----
-
-## Lint
+### Lint
 
 ```bash
 npm run lint
@@ -341,239 +191,139 @@ npm run lint
 
 ---
 
-# Development Workflow
+## Environment variables
 
-The project uses Git for version control.
+Copy and edit (never commit `.env.local` — it is git-ignored):
 
-The repository is hosted on GitHub.
-
-Development should generally follow this workflow:
-
-```text
-Make a change
-     ↓
-Test locally
-     ↓
-Review the change
-     ↓
-git status
-     ↓
-git add
-     ↓
-git commit
-     ↓
-git push
+```bash
+cp .env.example .env.local
+chmod 600 .env.local
 ```
 
-Commits should describe the actual change.
-
-Examples:
-
-```text
-feat: add camera management page
-feat: add camera API
-feat: connect camera dashboard to API
-feat: add recording controls
-fix: correct camera stream URL
-refactor: extract camera type
-```
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection for the app (`nvr_app` role) |
+| `NEXT_PUBLIC_MEDIAMTX_BASE` | Browser-facing WebRTC base, e.g. `http://192.168.0.146:8889` (empty on dev PC → placeholder) |
+| `NEXT_PUBLIC_MEDIAMTX_PLAYBACK_BASE` | Browser-facing playback base, e.g. `http://192.168.0.146:9996` (empty on dev PC → placeholder) |
+| `RECORDINGS_DIR` | Server-side directory MediaMTX writes to, e.g. `/srv/mediamtx/recordings` (unset on dev PC → sync skips) |
+| `SYNC_SECRET` | Shared secret for machine callers of `POST /api/sync` (`openssl rand -hex 32`) |
+| `MEDIAMTX_API_BASE` | Server-side MediaMTX control API, e.g. `http://127.0.0.1:9997` (empty → cards show UNKNOWN) |
+| `AUTH_COOKIE_SECURE` | `false` for the current HTTP LAN deployment; `true` once HTTPS exists |
 
 ---
 
-# Environment Configuration
+## Database migrations
 
-Environment-specific values should not be hardcoded into application code.
+Migrations must be run **in order** on a fresh database:
 
-Future configuration will include values such as:
-
-```env
-MEDIAMTX_BASE_URL=http://192.168.0.146:8889
-DATABASE_URL=postgresql://...
+```bash
+npm run migrate -- db/migrations/001_recordings.sql
+npm run migrate -- db/migrations/002_recordings_sync.sql
+npm run migrate -- db/migrations/003_auth.sql
+# ...or: psql "$DATABASE_URL" -f db/migrations/001_recordings.sql (etc.)
 ```
 
-Secrets and environment files should never be committed to GitHub.
+| File | Contents |
+|---|---|
+| `001_recordings.sql` | Baseline `cameras` + `recordings` tables and base indexes |
+| `002_recordings_sync.sql` | Sync uniqueness `(camera_id, file_path)` + lookup index |
+| `003_auth.sql` | `users` + `sessions` tables and indexes |
+
+All files are idempotent (`IF NOT EXISTS`) and safe to re-run. Final schema:
+`cameras`, `recordings`, `users`, `sessions`.
 
 ---
-
-# Security Considerations
-
-This system is intended primarily for local/private network use.
-
-The application will eventually include:
-
-* Authentication
-* User accounts
-* Role-based access control
-* Protected camera-management operations
-* Protected recording controls
-* Input validation
-* Secure environment-variable handling
-
-The application should not expose camera streams or administrative functionality directly to the public internet without appropriate security controls.
-
----
-
-# Planned Features
-
-## Dashboard
-
-```text
-Dashboard
-├── Camera grid
-├── Live feeds
-├── Camera names
-├── Camera status
-├── Recording indicators
-├── Timestamp
-└── Fullscreen controls
-```
-
-## Camera Management
-
-```text
-Camera Management
-├── Add camera
-├── Edit camera
-├── Delete camera
-├── View camera configuration
-└── Check camera status
-```
-
-## Recording Management
-
-```text
-Recordings
-├── Camera selection
-├── Date selection
-├── Time selection
-├── Recording list
-├── Playback
-└── Recording deletion
-```
 
 ## Authentication
 
-```text
-Users
-├── Administrator
-└── Security Operator
+Create the initial ADMIN account (password never committed):
+
+```bash
+npm run user:create -- --username admin --role ADMIN --password '<secret>'
 ```
 
-The exact permission model will be defined when authentication is implemented.
+* Login at `/login`; anonymous visits to `/`, `/cameras/*`, `/recordings/*`
+  redirect there (edge middleware + server `requireUser`).
+* `OPERATOR` can view live feeds and recordings. Camera add/edit/delete,
+  recording deletion, manual sync, and user creation require `ADMIN`
+  (enforced in API routes with 401/403, UI hides the controls).
+* Session cookie `nvr_session`: `HttpOnly`, `SameSite=Lax`, `Secure` only
+  when `AUTH_COOKIE_SECURE=true`.
 
 ---
 
-# Deployment Architecture
+## MediaMTX
 
-The development environment and production environment are intentionally separated.
-
-### Development
+Critical distinction: the camera `path` in PostgreSQL is the **MediaMTX path
+name**, not the camera's RTSP URL.
 
 ```text
-Windows PC
-    │
-    └── Next.js development server
+Physical camera:  192.168.0.173
+RTSP source in mediamtx.yml:  rtsp://192.168.0.173/live/ch00_0
+NVR camera path:  stairs1
+Live (browser):   http://192.168.0.146:8889/stairs1/whep
+Playback:         http://192.168.0.146:9996/get?path=stairs1&start=…&duration=…s
+Segments on disk: /srv/mediamtx/recordings/stairs1/2026-09-26_10-00-00-000000.mp4
 ```
 
-### Homelab
+Merge `deploy/mediamtx-ghis-snippet.yml` into the server's `mediamtx.yml`
+(continuous recording, playback server, WHEP origins, per-path sources, sync
+webhook) — see `docs/deploy-ghis.md`.
+
+---
+
+## Deployment
+
+Full guide: [`security-nvr/docs/deploy-ghis.md`](security-nvr/docs/deploy-ghis.md).
+
+Standard layout on `ghis` (all service files and docs agree on this):
 
 ```text
-IP Cameras
-     ↓
-Ubuntu Server
-     ├── MediaMTX
-     ├── Recordings
-     └── NVR services
+App:      /opt/personal_NVR/security-nvr   (service user: nvr)
+Secrets:  /opt/personal_NVR/security-nvr/.env.local (mode 600)
+Recordings: /srv/mediamtx/recordings
+Backups:  /var/backups/nvr
 ```
 
-The final deployment may run the Next.js application alongside the existing MediaMTX installation, depending on resource constraints.
-
-Because the current Ubuntu server has limited hardware resources, unnecessary services should not be installed on it.
-
----
-
-# Resource Considerations
-
-The NVR is being designed with a lightweight architecture because the target homelab server has limited CPU and RAM resources.
-
-The system should therefore avoid unnecessary processing of video inside the Next.js application.
-
-Media processing should remain the responsibility of MediaMTX.
-
-The application should primarily handle:
-
-* Metadata
-* Configuration
-* Authentication
-* UI rendering
-* API operations
-* User interactions
-
-As the number of cameras increases, CPU, RAM, network bandwidth, storage usage, and recording retention will need to be monitored.
+Low-resource Ubuntu server: no Docker, Next.js + MediaMTX + PostgreSQL only.
+After any service change, run the reboot verification in the deploy guide
+(services restart → NVR accessible → login works → streams connect →
+recordings continue).
 
 ---
 
-# Roadmap
+## Development workflow
 
-### Phase 1 — Foundation
+```text
+branch/change
+    ↓ test locally (dev server + DB)
+    ↓ npm run lint
+    ↓ npm run build
+    ↓ review: git status + git diff (no secrets, no .env.local, no node_modules)
+    ↓ commit (logical, tested states only)
+    ↓ push
+```
 
-* [x] Initialize Next.js application
-* [x] Configure TypeScript
-* [x] Create NVR dashboard
-* [x] Create reusable camera component
-* [x] Connect dashboard to MediaMTX streams
-* [x] Add multiple cameras
-
-### Phase 2 — Camera Management
-
-* [x] Create camera management page
-* [x] Create camera API
-* [ ] Persist cameras in PostgreSQL
-* [ ] Add camera
-* [ ] Edit camera
-* [ ] Delete camera
-* [ ] Camera status
-
-### Phase 3 — Recording
-
-* [ ] Recording controls
-* [ ] Recording metadata
-* [ ] Recording browser
-* [ ] Date/time filtering
-* [ ] Playback
-* [ ] Recording deletion
-
-### Phase 4 — Authentication
-
-* [ ] Authentication
-* [ ] User accounts
-* [ ] Roles
-* [ ] Protected administrative actions
-
-### Phase 5 — Deployment
-
-* [ ] Configure production environment
-* [ ] Deploy Next.js application
-* [ ] Configure MediaMTX service
-* [ ] Configure startup/restart behavior
-* [ ] Verify LAN access
-* [ ] Test multiple simultaneous cameras
-* [ ] Monitor system resources
-
-### Phase 6 — Expansion
-
-* [ ] Support additional floors
-* [ ] Support approximately 15 cameras
-* [ ] Improve dashboard layout
-* [ ] Camera health monitoring
-* [ ] Storage/retention management
-* [ ] System administration interface
+Per-change rule: inspect → change → test → build → review diff → commit.
+Never push untested changes; never claim hardware-dependent behavior
+(RTSP streams, WHEP connections, physical recording, reboot survival) as
+verified without the server/cameras.
 
 ---
 
-# Project Philosophy
+## Current roadmap
 
-The NVR is intentionally being built as a modular system rather than as a single application responsible for everything.
+* HTTPS for the LAN deployment (then `AUTH_COOKIE_SECURE=true`) + refresh
+  MediaMTX/WebRTC allowed origins accordingly
+* Storage/retention management UI (currently fixed ~24h in `mediamtx.yml`)
+* Camera health monitoring history (currently point-in-time liveness only)
+* Support the ~15-camera expansion; monitor CPU/RAM/bandwidth/storage
+* Rename the deprecated `middleware.ts` convention to `proxy.ts` per the
+  Next.js 16 codemod warning (cosmetic, do on a quiet change)
+
+---
+
+## Project philosophy
 
 ```text
 MediaMTX
@@ -589,4 +339,6 @@ Browser
     → provides the operator interface
 ```
 
-This separation allows each component to perform the job it is designed for while keeping the overall system maintainable and suitable for the available homelab hardware.
+Every visible control maps to a real system capability: live means a
+MediaMTX publisher is connected, REC means recent segments exist, Delete
+removes the file and its row. No mockup buttons.
