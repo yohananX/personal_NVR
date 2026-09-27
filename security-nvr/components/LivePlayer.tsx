@@ -5,23 +5,26 @@ import { getWhepUrl } from "@/lib/mediamtx";
 
 type LivePlayerProps = {
   path: string;
-  autoPlay?: boolean;
 };
 
-type Status = "idle" | "loading" | "live" | "error" | "unconfigured";
+type Status = "loading" | "live" | "error" | "unconfigured";
 
-export default function LivePlayer({
-  path,
-  autoPlay = true,
-}: LivePlayerProps) {
+/**
+ * Live WebRTC player (WHEP via MediaMTX). Connects automatically on mount -
+ * the dashboard is a monitoring console, so there is no manual Play step.
+ * Muted autoplay satisfies browser autoplay policy; audio (if any) stays
+ * muted until the operator unmutes. Failures show an offline state + Retry.
+ */
+export default function LivePlayer({ path }: LivePlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
 
-  const [status, setStatus] = useState<Status>(
-    autoPlay ? "loading" : "idle"
+  const [status, setStatus] = useState<Status>(() =>
+    getWhepUrl(path) ? "loading" : "unconfigured"
   );
   const [message, setMessage] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
 
   const stop = useCallback(() => {
     if (pcRef.current) {
@@ -33,81 +36,99 @@ export default function LivePlayer({
     }
   }, []);
 
-  const start = useCallback(async () => {
+  const connect = useCallback(async () => {
     const whepUrl = getWhepUrl(path);
+    if (!whepUrl) return false;
 
-    if (!whepUrl) {
-      setStatus("unconfigured");
-      return;
+    const pc = new RTCPeerConnection();
+    pcRef.current = pc;
+
+    pc.addTransceiver("video", { direction: "recvonly" });
+    pc.addTransceiver("audio", { direction: "recvonly" });
+
+    pc.ontrack = (event) => {
+      if (videoRef.current) {
+        videoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "connected") {
+        setStatus("live");
+      } else if (
+        pc.connectionState === "failed" ||
+        pc.connectionState === "disconnected"
+      ) {
+        setStatus("error");
+        setMessage("Connection lost. Camera may be offline.");
+      }
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    const response = await fetch(whepUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/sdp",
+      },
+      body: offer.sdp,
+    });
+
+    if (!response.ok) {
+      throw new Error(`WHEP rejected (${response.status})`);
     }
 
-    stop();
-    setStatus("loading");
-    setMessage("");
+    const answerSdp = await response.text();
+    await pc.setRemoteDescription({
+      type: "answer",
+      sdp: answerSdp,
+    });
+    return true;
+  }, [path]);
 
-    try {
-      const pc = new RTCPeerConnection();
-      pcRef.current = pc;
-
-      pc.addTransceiver("video", { direction: "recvonly" });
-      pc.addTransceiver("audio", { direction: "recvonly" });
-
-      pc.ontrack = (event) => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = event.streams[0];
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "connected") {
-          setStatus("live");
-        } else if (
-          pc.connectionState === "failed" ||
-          pc.connectionState === "disconnected"
-        ) {
+  // Auto-connect on mount / path / retry. All state updates happen after
+  // an await (or in peer-connection callbacks), never synchronously.
+  useEffect(() => {
+    if (getWhepUrl(path) === null) return;
+    let cancelled = false;
+    const run = async () => {
+      stop();
+      try {
+        await connect();
+        // `live` is set via onconnectionstatechange; if the connection
+        // never reports back, surface the offline state after a timeout.
+        await new Promise((resolve) => setTimeout(resolve, 15000));
+        if (cancelled) return;
+        if (pcRef.current?.connectionState !== "connected") {
+          stop();
           setStatus("error");
           setMessage(
-            "Connection lost. Camera may be offline."
+            "Cannot reach live feed. Camera offline or MediaMTX unreachable."
           );
         }
-      };
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      const response = await fetch(whepUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/sdp",
-        },
-        body: offer.sdp,
-      });
-
-      if (!response.ok) {
-        throw new Error(`WHEP rejected (${response.status})`);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Live playback failed:", error);
+        stop();
+        setStatus("error");
+        setMessage(
+          "Cannot reach live feed. Camera offline or MediaMTX unreachable."
+        );
       }
-
-      const answerSdp = await response.text();
-      await pc.setRemoteDescription({
-        type: "answer",
-        sdp: answerSdp,
-      });
-    } catch (error) {
-      console.error("Live playback failed:", error);
+    };
+    void run();
+    return () => {
+      cancelled = true;
       stop();
-      setStatus("error");
-      setMessage(
-        "Cannot reach live feed. Camera offline or MediaMTX unreachable."
-      );
-    }
-  }, [path, stop]);
+    };
+  }, [connect, path, retryKey, stop]);
 
-  useEffect(() => {
-    if (autoPlay) {
-      start();
-    }
-    return () => stop();
-  }, [autoPlay, start, stop]);
+  function handleRetry() {
+    setStatus("loading");
+    setMessage("");
+    setRetryKey((k) => k + 1);
+  }
 
   function handleFullscreen() {
     if (containerRef.current?.requestFullscreen) {
@@ -146,21 +167,6 @@ export default function LivePlayer({
 
       {status !== "live" && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-center">
-          {status === "idle" && (
-            <>
-              <p className="text-sm text-zinc-500">
-                Live feed ready
-              </p>
-              <button
-                type="button"
-                onClick={start}
-                className="mt-3 rounded-md bg-white px-4 py-2 text-sm font-medium text-black"
-              >
-                ▶ Play live
-              </button>
-            </>
-          )}
-
           {status === "loading" && (
             <p className="text-sm text-zinc-400">
               Connecting to {path}…
@@ -169,7 +175,10 @@ export default function LivePlayer({
 
           {status === "error" && (
             <>
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm font-medium text-red-400">
+                ● OFFLINE
+              </p>
+              <p className="mt-1 text-sm text-zinc-400">
                 Camera feed unavailable
               </p>
               <p className="mt-1 max-w-xs text-xs text-zinc-600">
@@ -177,7 +186,7 @@ export default function LivePlayer({
               </p>
               <button
                 type="button"
-                onClick={start}
+                onClick={handleRetry}
                 className="mt-3 rounded-md border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-800"
               >
                 Retry

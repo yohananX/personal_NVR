@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import Link from "next/link";
 import CameraCard from "@/components/CameraCard";
 import Clock from "@/components/Clock";
 import LogoutButton from "@/components/LogoutButton";
@@ -18,6 +19,24 @@ async function getCameras(): Promise<Camera[]> {
   }
 
   return response.json();
+}
+
+// RECENT_MS duplicated from CameraCard: a camera counts as "recording"
+// when MediaMTX produced a segment within the last 70 minutes.
+const RECENT_MS = 70 * 60 * 1000;
+
+function withRecordingFlag(cameras: Camera[]): (Camera & {
+  recording_active: boolean;
+})[] {
+  const now = Date.now();
+  return cameras.map((camera) => ({
+    ...camera,
+    recording_active: Boolean(
+      camera.last_recording_at &&
+        now - new Date(camera.last_recording_at).getTime() <
+          RECENT_MS
+    ),
+  }));
 }
 
 export default async function Home() {
@@ -44,7 +63,7 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
-      <header className="border-b border-zinc-800 px-6 py-4">
+      <header className="border-b border-zinc-800 px-4 py-3 md:px-6 md:py-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">
@@ -74,8 +93,8 @@ export default async function Home() {
         </div>
       </header>
 
-      <section className="p-6">
-        <div className="mb-6 flex items-center justify-between">
+      <section className="p-3 md:p-4">
+        <div className="mb-3 flex items-center justify-between md:mb-4">
           <div>
             <h2 className="text-lg font-medium">
               Cameras
@@ -88,12 +107,18 @@ export default async function Home() {
           </div>
 
           <div className="flex gap-2">
-            <a
+            <Link
+              href="/recordings"
+              className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900"
+            >
+              Recordings
+            </Link>
+            <Link
               href="/cameras"
               className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-900"
             >
               Manage Cameras
-            </a>
+            </Link>
             <LogoutButton />
           </div>
         </div>
@@ -104,19 +129,20 @@ export default async function Home() {
               No cameras configured.
             </p>
 
-            <a
+            <Link
               href="/cameras"
               className="mt-4 inline-block text-sm text-white underline"
             >
               Add a camera
-            </a>
+            </Link>
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {cameras.map((camera) => (
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {withRecordingFlag(cameras).map((camera) => (
               <CameraCard
                 key={camera.path}
                 camera={camera}
+                recordingActive={camera.recording_active}
                 live={
                   liveness?.configured
                     ? (liveness.online[camera.path] ?? false)
