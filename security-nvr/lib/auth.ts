@@ -80,8 +80,12 @@ export function sessionCookieHeader(
   token: string,
   expiresAt: Date
 ): string {
+  // LAN-first: HTTP deployments (http://192.168.0.146:3000) reject
+  // `Secure` cookies, so the flag is env-controlled, not NODE_ENV-based.
+  // HTTP LAN:  AUTH_COOKIE_SECURE=false (or unset)
+  // HTTPS:     AUTH_COOKIE_SECURE=true
   const secure =
-    process.env.NODE_ENV === "production" ? "; Secure" : "";
+    process.env.AUTH_COOKIE_SECURE === "true" ? "; Secure" : "";
   return (
     `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax` +
     `${secure}; Expires=${expiresAt.toUTCString()}`
