@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
+import RecordingDeleteButton from "@/components/RecordingDeleteButton";
 import RecordingPlayer from "@/components/RecordingPlayer";
 import { requireUser } from "@/lib/auth";
 
@@ -55,7 +56,7 @@ function getDuration(startedAt: string, endedAt: string) {
 export default async function RecordingPage({
   params,
 }: RecordingPageProps) {
-  await requireUser();
+  const user = await requireUser();
   const { id } = await params;
 
   const recording = await getRecording(id);
@@ -63,12 +64,21 @@ export default async function RecordingPage({
   return (
     <main className="min-h-screen bg-zinc-950 text-white">
       <header className="border-b border-zinc-800 px-6 py-4">
-        <Link
-          href={`/cameras/${recording.camera_id}`}
-          className="text-sm text-zinc-500 hover:text-white"
-        >
-          ← {recording.camera_name}
-        </Link>
+        <div className="flex items-center gap-4 text-sm">
+          <Link
+            href="/"
+            className="text-zinc-500 hover:text-white"
+          >
+            ← Dashboard
+          </Link>
+          <span className="text-zinc-700">·</span>
+          <Link
+            href={`/cameras/${recording.camera_id}`}
+            className="text-zinc-500 hover:text-white"
+          >
+            ← {recording.camera_name}
+          </Link>
+        </div>
 
         <h1 className="mt-2 text-xl font-semibold">
           Recording Playback
@@ -127,14 +137,24 @@ export default async function RecordingPage({
 
             </div>
 
-            <div className="mt-6 border-t border-zinc-800 pt-4">
-              <p className="text-xs text-zinc-500">
-                RECORDING FILE
-              </p>
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-800 pt-4">
+              <div>
+                <p className="text-xs text-zinc-500">
+                  RECORDING FILE
+                </p>
 
-              <p className="mt-1 text-sm text-zinc-400">
-                {recording.file_path}
-              </p>
+                <p className="mt-1 font-mono text-sm text-zinc-400">
+                  {recording.file_path}
+                </p>
+              </div>
+
+              {user.role === "ADMIN" && (
+                <RecordingDeleteButton
+                  id={recording.id}
+                  startedAt={recording.started_at}
+                  redirectTo={`/cameras/${recording.camera_id}`}
+                />
+              )}
             </div>
           </div>
 
